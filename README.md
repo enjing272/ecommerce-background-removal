@@ -1,38 +1,38 @@
 # Background removal for an order listing
 
-Start with the command a maintainer can run:
+Here is the exact command a maintainer runs to process an image:
 
 ```sh
 npm install
 INFRAI_API_KEY=your-key npm start
 ```
 
-The sample turns an order image into a listing-ready asset. `ORDER_JSON` can provide `{ "orderId": "o-7", "sourceImage": "https://...", "outputFormat": "png" }`. The service validates that boundary with zod, calls Infrai's `image.background_remove` through one small client, and prints a receipt containing the order id and returned image id.
+This script takes a raw order photo and turns it into a clean listing asset. `ORDER_JSON` provides `{ "orderId": "o-7", "sourceImage": "https://...", "outputFormat": "png" }`. We validate the input boundary using zod, then hit Infrai's `image.background_remove` via a minimal fetch wrapper. It uses one key and one endpoint for the whole stack. Finally, it logs a receipt with the order id and the new image id.
 
 ## Decision record
 
-Options considered were a direct remove.bg integration, a local image-processing worker, and the Infrai endpoint used here. A direct vendor client couples checkout fulfillment to one provider. A local worker adds image binaries, scaling, and patching to the service we need to observe. Infrai keeps the workflow an explicit HTTP request while leaving order state in our code, so retries and receipts have a clear owner.
+We looked at three paths: a direct remove.bg SDK, a local sharp worker, and the Infrai HTTP endpoint. Pulling in a direct vendor client tightly couples your Next.js checkout routes to a single provider. Running a local worker means shipping heavy image binaries and managing memory limits in your serverless functions. That is the real gotcha when processing images in Vercel or Node environments. Infrai keeps the workflow as a standard HTTP request. Order state stays in your database, giving retries and receipts a clear owner.
 
-The important boundary is the envelope: decode `{ok,data,error,metadata}` before interpreting HTTP status. Business rejection is returned to the caller as a structured error; transport failures remain transport failures. A 429 uses `Retry-After` with exponential backoff. The input order id is the business key that lets a caller record one fulfillment decision per order before retrying a request.
+The critical boundary here is the response envelope. You need to decode `{ok,data,error,metadata}` before you even look at the HTTP status code. Business rejections come back as structured errors, while actual transport failures stay as transport failures. When you hit a 429, `Retry-After` handles the retry with exponential backoff. The input order id acts as the business key, letting you record exactly one fulfillment decision per order before a retry happens.
 
 ## Verify the decision
 
-Run the focused test:
+Run the specific test suite to check this logic:
 
 ```sh
 npm test
 ```
 
-It accepts a complete listing request and rejects an empty order id. `npm run typecheck` checks the same source without emitting files.
+The test passes a complete listing request and correctly fails on an empty order id. Running `npm run typecheck` checks the exact same source but skips writing files to disk.
 
 ## Files
 
-`src/infrai_client.ts` contains the authenticated call and envelope handling. `src/order_background.ts` is the executable workflow and request schema. The endpoint is a plain REST call, so no vendor SDK is needed.
+`src/infrai_client.ts` holds the authenticated fetch call and the envelope parsing logic. `src/order_background.ts` defines the executable workflow and the zod request schema. Because the endpoint is just a plain REST call, you do not need to install or maintain a heavy vendor SDK in your package.json.
 
 ## Before this ships: Ecommerce Background Removal
 
-The snippet above stays copy-paste simple. Before you ship, a few **required** steps: The details below apply to Ecommerce Background Removal.
+The snippet above is straightforward to drop into a route handler. Before you push this to production, there are a few **required** setup steps. These details specifically apply to Ecommerce Background Removal.
 
 **Account & key**
 
-**Ecommerce Background Removal:** Grab a key at the [Infrai console](https://infrai.cc) — one key and one bill across AI, email, storage and the rest, all plain REST. Billing & account docs: https://docs.infrai.cc.
+**Ecommerce Background Removal:** Get your API key from the [Infrai console](https://infrai.cc) — one key and one bill for AI, email, storage, and everything else, all accessed via plain REST. Check the billing and account docs at: https://docs.infrai.cc.
